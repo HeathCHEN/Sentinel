@@ -126,7 +126,7 @@ public class AuthorityRuleController {
 
     @PostMapping("/rule")
     @AuthAction(PrivilegeType.WRITE_RULE)
-    public Result<AuthorityRuleEntity> apiAddAuthorityRule(@RequestBody AuthorityRuleEntity entity) {
+    public Result<AuthorityRuleEntity> apiAddAuthorityRule(@RequestBody AuthorityRuleEntity entity) throws Exception {
         Result<AuthorityRuleEntity> checkResult = checkEntityInternal(entity);
         if (checkResult != null) {
             return checkResult;
@@ -137,21 +137,20 @@ public class AuthorityRuleController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
-            publishRules(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("Failed to add authority rule", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-//        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
-//            logger.info("Publish authority rules failed after rule add");
-//        }
+        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
+            logger.info("Publish authority rules failed after rule add");
+        }
         return Result.ofSuccess(entity);
     }
 
     @PutMapping("/rule/{id}")
     @AuthAction(PrivilegeType.WRITE_RULE)
     public Result<AuthorityRuleEntity> apiUpdateParamFlowRule(@PathVariable("id") Long id,
-                                                              @RequestBody AuthorityRuleEntity entity) {
+                                                              @RequestBody AuthorityRuleEntity entity) throws Exception {
         if (id == null || id <= 0) {
             return Result.ofFail(-1, "Invalid id");
         }
@@ -165,7 +164,6 @@ public class AuthorityRuleController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
-            publishRules(entity.getApp());
             if (entity == null) {
                 return Result.ofFail(-1, "Failed to save authority rule");
             }
@@ -173,15 +171,15 @@ public class AuthorityRuleController {
             logger.error("Failed to save authority rule", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-//        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
-//            logger.info("Publish authority rules failed after rule update");
-//        }
+        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
+            logger.info("Publish authority rules failed after rule update");
+        }
         return Result.ofSuccess(entity);
     }
 
     @DeleteMapping("/rule/{id}")
     @AuthAction(PrivilegeType.DELETE_RULE)
-    public Result<Long> apiDeleteRule(@PathVariable("id") Long id) {
+    public Result<Long> apiDeleteRule(@PathVariable("id") Long id) throws Exception {
         if (id == null) {
             return Result.ofFail(-1, "id cannot be null");
         }
@@ -191,20 +189,22 @@ public class AuthorityRuleController {
         }
         try {
             repository.delete(id);
-            publishRules(oldEntity.getApp());
         } catch (Exception e) {
             return Result.ofFail(-1, e.getMessage());
         }
-//        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
-//            logger.error("Publish authority rules failed after rule delete");
-//        }
+        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
+            logger.error("Publish authority rules failed after rule delete");
+        }
         return Result.ofSuccess(id);
     }
 
-    private void publishRules(String app) throws Exception {
-        List<AuthorityRuleEntity> rules = repository.findAllByApp(app);
-        rulePublisher.publish(app,rules);
-//        return sentinelApiClient.setAuthorityRuleOfMachine(app, ip, port, rules);
 
+
+    private boolean publishRules(String app, String ip, Integer port) throws Exception {
+
+        List<AuthorityRuleEntity> rules1 = repository.findAllByApp(app);
+        rulePublisher.publish(app,rules1);
+        List<AuthorityRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+        return sentinelApiClient.setAuthorityRuleOfMachine(app, ip, port, rules);
     }
 }

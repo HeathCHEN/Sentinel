@@ -95,7 +95,7 @@ public class  GatewayApiController {
 
     @PostMapping("/new.json")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
-    public Result<ApiDefinitionEntity> addApi(HttpServletRequest request, @RequestBody AddApiReqVo reqVo) {
+    public Result<ApiDefinitionEntity> addApi(HttpServletRequest request, @RequestBody AddApiReqVo reqVo) throws Exception {
 
         String app = reqVo.getApp();
         if (StringUtil.isBlank(app)) {
@@ -164,12 +164,13 @@ public class  GatewayApiController {
 
         try {
             entity = repository.save(entity);
-            publishApis(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("add gateway api error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-
+        if (!publishApis(app, ip, port)) {
+            logger.warn("publish gateway apis fail after add");
+        }
 
 
         return Result.ofSuccess(entity);
@@ -177,7 +178,7 @@ public class  GatewayApiController {
 
     @PostMapping("/save.json")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
-    public Result<ApiDefinitionEntity> updateApi(@RequestBody UpdateApiReqVo reqVo) {
+    public Result<ApiDefinitionEntity> updateApi(@RequestBody UpdateApiReqVo reqVo) throws Exception {
         String app = reqVo.getApp();
         if (StringUtil.isBlank(app)) {
             return Result.ofFail(-1, "app can't be null or empty");
@@ -230,22 +231,22 @@ public class  GatewayApiController {
             if (entity == null) {
                 return Result.ofFail(-1, "save entity fail");
             }
-            publishApis(entity.getApp());
 
         } catch (Throwable throwable) {
             logger.error("update gateway api error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
 
-
-
+        if (!publishApis(app, entity.getIp(), entity.getPort())) {
+            logger.warn("publish gateway apis fail after update");
+        }
         return Result.ofSuccess(entity);
     }
 
     @PostMapping("/delete.json")
     @AuthAction(AuthService.PrivilegeType.DELETE_RULE)
 
-    public Result<Long> deleteApi(Long id) {
+    public Result<Long> deleteApi(Long id) throws Exception {
         if (id == null) {
             return Result.ofFail(-1, "id can't be null");
         }
@@ -257,19 +258,25 @@ public class  GatewayApiController {
 
         try {
             repository.delete(id);
-            publishApis(oldEntity.getApp());
+
         } catch (Throwable throwable) {
             logger.error("delete gateway api error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-
+        if (!publishApis(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
+            logger.warn("publish gateway apis fail after delete");
+        }
 
 
         return Result.ofSuccess(id);
     }
 
-    private void publishApis(String app) throws Exception {
-        List<ApiDefinitionEntity> apis = repository.findAllByApp(app);
-        rulePublisher.publish(app, apis);
+
+    private boolean publishApis(String app, String ip, Integer port) throws Exception {
+
+        List<ApiDefinitionEntity> apis1 = repository.findAllByApp(app);
+        rulePublisher.publish(app, apis1);
+        List<ApiDefinitionEntity> apis = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+        return sentinelApiClient.modifyApis(app, ip, port, apis);
     }
 }

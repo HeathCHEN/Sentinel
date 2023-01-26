@@ -98,7 +98,7 @@ public class GatewayFlowRuleController {
 
     @PostMapping("/new.json")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
-    public Result<GatewayFlowRuleEntity> addFlowRule(@RequestBody AddFlowRuleReqVo reqVo) {
+    public Result<GatewayFlowRuleEntity> addFlowRule(@RequestBody AddFlowRuleReqVo reqVo) throws Exception {
 
         String app = reqVo.getApp();
         if (StringUtil.isBlank(app)) {
@@ -251,10 +251,14 @@ public class GatewayFlowRuleController {
 
         try {
             entity = repository.save(entity);
-            publishRules(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("add gateway flow rule error:", throwable);
             return Result.ofThrowable(-1, throwable);
+        }
+
+
+        if (!publishRules(app, ip, port)) {
+            logger.warn("publish gateway flow rules fail after add");
         }
 
 
@@ -264,7 +268,7 @@ public class GatewayFlowRuleController {
 
     @PostMapping("/save.json")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
-    public Result<GatewayFlowRuleEntity> updateFlowRule(@RequestBody UpdateFlowRuleReqVo reqVo) {
+    public Result<GatewayFlowRuleEntity> updateFlowRule(@RequestBody UpdateFlowRuleReqVo reqVo) throws Exception {
 
         String app = reqVo.getApp();
         if (StringUtil.isBlank(app)) {
@@ -399,13 +403,14 @@ public class GatewayFlowRuleController {
             if (entity == null) {
                 return Result.ofFail(-1, "save entity fail");
             }
-            publishRules(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("update gateway flow rule error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
 
-
+        if (!publishRules(app, entity.getIp(), entity.getPort())) {
+            logger.warn("publish gateway flow rules fail after update");
+        }
 
         return Result.ofSuccess(entity);
     }
@@ -413,7 +418,7 @@ public class GatewayFlowRuleController {
 
     @PostMapping("/delete.json")
     @AuthAction(AuthService.PrivilegeType.DELETE_RULE)
-    public Result<Long> deleteFlowRule(Long id) {
+    public Result<Long> deleteFlowRule(Long id) throws Exception {
 
         if (id == null) {
             return Result.ofFail(-1, "id can't be null");
@@ -426,19 +431,25 @@ public class GatewayFlowRuleController {
 
         try {
             repository.delete(id);
-            publishRules(oldEntity.getApp());
         } catch (Throwable throwable) {
             logger.error("delete gateway flow rule error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-
+        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
+            logger.warn("publish gateway flow rules fail after delete");
+        }
 
         return Result.ofSuccess(id);
     }
 
-    private void publishRules(String app) throws Exception {
-        List<GatewayFlowRuleEntity> rules = repository.findAllByApp(app);
-        rulePublisher.publish(app, rules);
 
+
+    private boolean publishRules(String app, String ip, Integer port) throws Exception {
+
+        List<GatewayFlowRuleEntity> rules1 = repository.findAllByApp(app);
+        rulePublisher.publish(app, rules1);
+
+        List<GatewayFlowRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+        return sentinelApiClient.modifyGatewayFlowRules(app, ip, port, rules);
     }
 }

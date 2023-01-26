@@ -153,8 +153,7 @@ public class ParamFlowRuleController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
-//            publishRules(entity.getApp(), entity.getIp(), entity.getPort()).get();
-            publishRules(entity.getApp());
+            publishRules(entity.getApp(), entity.getIp(), entity.getPort()).get();
             return Result.ofSuccess(entity);
         } catch (ExecutionException ex) {
             logger.error("Error when adding new parameter flow rules", ex.getCause());
@@ -231,8 +230,7 @@ public class ParamFlowRuleController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
-            publishRules(entity.getApp());
-//            publishRules(entity.getApp(), entity.getIp(), entity.getPort()).get();
+            publishRules(entity.getApp(), entity.getIp(), entity.getPort()).get();
             return Result.ofSuccess(entity);
         } catch (ExecutionException ex) {
             logger.error("Error when updating parameter flow rules, id=" + id, ex.getCause());
@@ -260,8 +258,7 @@ public class ParamFlowRuleController {
 
         try {
             repository.delete(id);
-//            publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort()).get();
-            publishRules(oldEntity.getApp());
+            publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort()).get();
             return Result.ofSuccess(id);
 
         } catch (ExecutionException ex) {
@@ -277,10 +274,12 @@ public class ParamFlowRuleController {
         }
     }
 
-    private void publishRules(String app) throws Exception {
-        List<ParamFlowRuleEntity> rules = repository.findAllByApp(app);
-        rulePublisher.publish(app, rules);
-//        return sentinelApiClient.setParamFlowRuleOfMachine(app, ip, port, rules);
+
+    private CompletableFuture<Void> publishRules(String app, String ip, Integer port) throws Exception {
+        List<ParamFlowRuleEntity> rules1= repository.findAllByApp(app);
+        rulePublisher.publish(app, rules1);
+        List<ParamFlowRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+        return sentinelApiClient.setParamFlowRuleOfMachine(app, ip, port, rules);
     }
 
     private <R> Result<R> unsupportedVersion() {
